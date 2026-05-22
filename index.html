@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stroop Sync Bypass</title>
+    <title>Cognitive Assessment Interface</title>
     <style>
         body {
             margin: 0;
-            background: #0b0c10;
-            color: #ffffff;
-            font-family: system-ui, sans-serif;
+            background: #ffffff;
+            color: #1a1a1a;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -17,85 +17,103 @@
             height: 100vh;
             overflow: hidden;
         }
-        .header { margin-bottom: 25px; }
-        .score-board { font-size: 24px; color: #1f2833; color: #45f3ff; font-weight: bold; }
-        .timer-display { font-size: 20px; color: #ff4a4a; margin: 5px; }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #666666;
+            margin-bottom: 40px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 10px;
+        }
+        .role-indicator {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            color: #888888;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
         
-        #role-badge { padding: 8px 20px; border-radius: 20px; font-weight: bold; font-size: 16px; margin-bottom: 20px; text-transform: uppercase; }
+        /* Main Card Modules */
+        .display-area { display: none; margin: 40px 0; }
         
-        /* Layout Modules */
-        .pane { display: none; background: #1f2833; border: 1px solid #c5a059; border-radius: 12px; padding: 40px; width: 320px; box-sizing: border-box; text-align: center; }
-        
-        /* The Stroop Target Word */
-        #stroop-target {
-            font-size: 64px;
-            font-weight: 900;
-            letter-spacing: 2px;
-            margin: 20px 0;
+        /* Stimulus Word */
+        #stimulus-text {
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: -1px;
         }
 
-        /* Choice Buttons for Terminal Interface */
-        .options-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-top: 10px;
+        /* Choice Configurations */
+        .choices-vertical {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
-        .choice-btn {
-            background: #0b0c10;
-            border: 2px solid #45f3ff;
-            color: #ffffff;
-            padding: 20px 10px;
-            font-size: 18px;
-            font-weight: bold;
-            border-radius: 8px;
+        .response-button {
+            background: #f8f9fa;
+            border: 1px solid #e2e8f0;
+            padding: 16px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 6px;
             cursor: pointer;
-            text-transform: uppercase;
-            -webkit-user-select: none;
-            user-select: none;
+            transition: background 0.15s ease;
         }
-        .choice-btn:active { background: #45f3ff; color: #000; }
+        .response-button:active { background: #edf2f7; }
         
-        #feedback-msg { font-size: 20px; color: #ffff00; margin-top: 25px; font-weight: bold; min-height: 50px; }
+        #feedback-log {
+            font-size: 14px;
+            font-weight: 500;
+            color: #666666;
+            margin-top: 40px;
+            min-height: 20px;
+        }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <div class="score-board">TEAM COMPLIANCE: <span id="score-val">0</span></div>
-        <div class="timer-display">STABILITY WINDOW: <span id="timer-val">7</span>s</div>
+    <div class="container">
+        <div class="meta-row">
+            <div>Score: <span id="score-val" style="font-weight:600; color:#1a1a1a;">0</span></div>
+            <div>Remaining: <span id="timer-val" style="font-weight:600; color:#1a1a1a;">7</span>s</div>
+        </div>
+
+        <div id="role-indicator" class="role-indicator">Initializing Session...</div>
+
+        <!-- Presenter Mode View -->
+        <div id="presenter-view" class="display-area">
+            <div id="stimulus-text">WORD</div>
+        </div>
+
+        <!-- Responder Mode View -->
+        <div id="responder-view" class="display-area">
+            <div class="choices-vertical" id="choices-container"></div>
+        </div>
+
+        <div id="feedback-log">Awaiting secondary connection...</div>
     </div>
-
-    <div id="role-badge">Calibrating matrix...</div>
-
-    <!-- MONITOR PANEL (Transmitter) -->
-    <div id="monitor-pane" class="pane">
-        <div style="color: #66fcf1; font-size: 14px; font-weight: bold;">SAY THE INK COLOR ALOUD:</div>
-        <div id="stroop-target">WORD</div>
-    </div>
-
-    <!-- TERMINAL PANEL (Receiver) -->
-    <div id="terminal-pane" class="pane">
-        <div style="color: #66fcf1; font-size: 14px; font-weight: bold; margin-bottom: 15px;">SELECT SPANNING COLOR MATCH:</div>
-        <div class="options-grid" id="buttons-container"></div>
-    </div>
-
-    <div id="feedback-msg">Waiting for nodes to align...</div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         let myId = null;
-        let currentTargetColor = "";
 
-        // Standard web-safe high-contrast color dictionary
-        const COLOR_MAP = {
-            'RED': '#ff3333',
-            'BLUE': '#3377ff',
-            'GREEN': '#33cc33',
-            'YELLOW': '#ffff33',
-            'ORANGE': '#ff9933',
-            'PURPLE': '#cc33ff'
+        const HEX_MAP = {
+            'RED': '#dc2626',
+            'BLUE': '#2563eb',
+            'GREEN': '#16a34a',
+            'YELLOW': '#ca8a04',
+            'ORANGE': '#ea580c',
+            'PURPLE': '#9333ea'
         };
 
         socket.on('connect', () => { myId = socket.id; });
@@ -103,40 +121,35 @@
         socket.on('roundStart', (data) => {
             document.getElementById('score-val').innerText = data.score;
             document.getElementById('timer-val').innerText = data.timeLeft;
-            document.getElementById('feedback-msg').innerText = "System Synced";
-            document.getElementById('feedback-msg').style.color = "#ffff00";
+            document.getElementById('feedback-log').innerText = "";
 
-            const me = data.players[myId];
-            const roleBadge = document.getElementById('role-badge');
-            const monitorPane = document.getElementById('monitor-pane');
-            const terminalPane = document.getElementById('terminal-pane');
-            
-            currentTargetColor = data.challenge.color;
+            const activeIdentity = data.players[myId];
+            const indicator = document.getElementById('role-indicator');
+            const pView = document.getElementById('presenter-view');
+            const rView = document.getElementById('responder-view');
 
-            if (me.role === 'Monitor') {
-                roleBadge.innerText = "Role: Core Scanner";
-                roleBadge.style.backgroundColor = "#1f3a60";
-                monitorPane.style.display = "block";
-                terminalPane.style.display = "none";
+            if (activeIdentity.role === 'Presenter') {
+                indicator.innerText = "Read ink color out loud";
+                pView.style.display = "block";
+                rView.style.display = "none";
 
-                // Set up the target word layout with the mismatched ink color
-                const wordElement = document.getElementById('stroop-target');
-                wordElement.innerText = data.challenge.text;
-                wordElement.style.color = COLOR_MAP[data.challenge.color];
+                const target = document.getElementById('stimulus-text');
+                target.innerText = data.task.presenterText;
+                target.style.color = HEX_MAP[data.task.presenterColor];
             } else {
-                roleBadge.innerText = "Role: Core Interceptor";
-                roleBadge.style.backgroundColor = "#601f3a";
-                monitorPane.style.display = "none";
-                terminalPane.style.display = "block";
+                indicator.innerText = "Select target item matching vocal prompt";
+                pView.style.display = "none";
+                rView.style.display = "block";
 
-                // Render options buttons cleanly
-                const container = document.getElementById('buttons-container');
+                const container = document.getElementById('choices-container');
                 container.innerHTML = '';
-                data.challenge.choices.forEach(colorName => {
+                
+                data.task.responderChoices.forEach(item => {
                     const btn = document.createElement('button');
-                    btn.className = 'choice-btn';
-                    btn.innerText = colorName;
-                    btn.onclick = () => socket.emit('submitSelection', colorName, currentTargetColor);
+                    btn.className = 'response-button';
+                    btn.innerText = item.text;
+                    btn.style.color = HEX_MAP[item.color];
+                    btn.onclick = () => socket.emit('verifyChoice', item.isCorrect);
                     container.appendChild(btn);
                 });
             }
@@ -147,9 +160,7 @@
         });
 
         socket.on('roundOver', (result) => {
-            const feedback = document.getElementById('feedback-msg');
-            feedback.innerText = result.reason;
-            feedback.style.color = result.success ? '#66fcf1' : '#ff4a4a';
+            document.getElementById('feedback-log').innerText = result.reason;
         });
     </script>
 </body>
