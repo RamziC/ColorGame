@@ -18,7 +18,7 @@ let gameActive = false;
 let activeTask = null;
 let roundNumber = 0;
 
-const COLORS = ['RED', 'BLUE', 'GREEN', 'YELLOW', 'ORANGE', 'PURPLE', 'PINK', 'CYAN', 'BROWN', 'GRAY'];
+const COLORS = ["BLACK", "RED", "GREEN", "YELLOW", "BLUE", "BROWN", "ORANGE", "PURPLE", "PINK", "GREY"];
 
 function generateTask() {
     // Presenter sees a word in a colored ink; must say the ink color aloud.
