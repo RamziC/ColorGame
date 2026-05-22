@@ -10,67 +10,61 @@ app.use(express.static(__dirname));
 
 let players = {};
 let score = 0;
-let timer = null;
+let roundTimer = null;
+let gameTimer = null;
 let timeLeft = 7;
+let gameTimeLeft = 90;
 let gameActive = false;
 let activeTask = null;
 let roundNumber = 0;
 
-const COLORS = ['RED', 'BLUE', 'GREEN', 'YELLOW', 'ORANGE', 'PURPLE'];
+const COLORS = ['RED', 'BLUE', 'GREEN', 'YELLOW', 'ORANGE', 'PURPLE', 'PINK', 'CYAN', 'BROWN', 'GRAY'];
 
 function generateTask() {
-    // The presenter sees a word written in a specific ink color.
-    // They must say the INK COLOR out loud (not the word).
-    // The responder hears the ink color and must find the button
-    // whose INK COLOR matches what was said.
+    // Presenter sees a word in a colored ink; must say the ink color aloud.
+    // Responder hears the color and taps the button with that ink color.
 
-    // Pick the word shown to presenter (any color name)
     const presenterText = COLORS[Math.floor(Math.random() * COLORS.length)];
 
-    // Pick the ink color of that word — this is what presenter must say aloud
-    // Must differ from the word itself to create the Stroop conflict
+    // Ink color must differ from the word text
     let targetColor = COLORS[Math.floor(Math.random() * COLORS.length)];
     while (targetColor === presenterText) {
         targetColor = COLORS[Math.floor(Math.random() * COLORS.length)];
     }
 
-    // Build 4 choices, all with DIFFERENT ink colors
-    // One choice must have ink color === targetColor (the correct one)
-    // No two choices share the same ink color
-    const usedInkColors = new Set();
-    usedInkColors.add(targetColor);
+    // Build 4 choices with ALL DIFFERENT ink colors.
+    // Correct choice: ink === targetColor
+    // Distractor rule: at least one button must SPELL OUT the target color word
+    //   (but have a different ink color) to maximise confusion.
 
-    // Correct choice: any word text, ink = targetColor
-    const correctText = COLORS[Math.floor(Math.random() * COLORS.length)];
-    const choices = [{
-        text: correctText,
-        color: targetColor,
-        isCorrect: true
-    }];
-
-    // Fill remaining 3 slots with unique ink colors
-    const remainingColors = COLORS.filter(c => c !== targetColor);
-    // Shuffle remaining colors
-    remainingColors.sort(() => Math.random() - 0.5);
-
-    for (let i = 0; i < 3; i++) {
-        const inkColor = remainingColors[i];
-        const wordText = COLORS[Math.floor(Math.random() * COLORS.length)];
-        choices.push({
-            text: wordText,
-            color: inkColor,
-            isCorrect: false
-        });
+    // Slot 0: correct answer — ink = targetColor, text = anything except targetColor word
+    let correctText = COLORS[Math.floor(Math.random() * COLORS.length)];
+    while (correctText === targetColor) {
+        correctText = COLORS[Math.floor(Math.random() * COLORS.length)];
     }
+    const choices = [{ text: correctText, color: targetColor, isCorrect: true }];
 
-    // Shuffle choices
+    // Pick 3 other ink colors (all different from targetColor and each other)
+    const remainingColors = COLORS.filter(c => c !== targetColor);
+    remainingColors.sort(() => Math.random() - 0.5);
+    const distractorInks = remainingColors.slice(0, 3);
+
+    // One distractor must spell out targetColor (wrong ink, right word — very confusing)
+    const confuserIndex = Math.floor(Math.random() * 3);
+    distractorInks.forEach((inkColor, i) => {
+        const text = i === confuserIndex
+            ? targetColor                                           // spells the answer, wrong ink
+            : COLORS[Math.floor(Math.random() * COLORS.length)];  // random word
+        choices.push({ text, color: inkColor, isCorrect: false });
+    });
+
+    // Shuffle
     choices.sort(() => Math.random() - 0.5);
 
-    // Strip isCorrect before sending to client — validation happens server-side
     const clientChoices = choices.map((c, index) => ({
         text: c.text,
         color: c.color,
-        index: index
+        index
     }));
 
     return {
@@ -79,7 +73,6 @@ function generateTask() {
             presenterColor: targetColor,
             responderChoices: clientChoices
         },
-        // Server-side truth: which index is correct
         correctIndex: choices.findIndex(c => c.isCorrect),
         targetColor
     };
@@ -89,18 +82,25 @@ function getPlayerIds() {
     return Object.keys(players);
 }
 
+function endGame() {
+    gameActive = false;
+    activeTask = null;
+    if (roundTimer) { clearInterval(roundTimer); roundTimer = null; }
+    if (gameTimer)  { clearInterval(gameTimer);  gameTimer  = null; }
+    io.emit('gameOver', { score });
+}
+
 function startNewRound() {
     const ids = getPlayerIds();
     if (ids.length < 2) return;
+    if (gameTimeLeft <= 0) { endGame(); return; }
 
     roundNumber++;
 
-    // Alternate roles each round
     if (roundNumber === 1) {
         players[ids[0]].role = 'Presenter';
         players[ids[1]].role = 'Responder';
     } else {
-        // Swap roles
         ids.forEach(id => {
             players[id].role = players[id].role === 'Presenter' ? 'Responder' : 'Presenter';
         });
@@ -113,25 +113,34 @@ function startNewRound() {
 
     io.emit('roundStart', {
         task: generated.task,
-        players: players,
-        score: score,
-        timeLeft: timeLeft
+        players,
+        score,
+        timeLeft,
+        gameTimeLeft
     });
 }
 
-function startTimer() {
-    if (timer) clearInterval(timer);
-    timer = setInterval(() => {
+function startRoundTimer() {
+    if (roundTimer) clearInterval(roundTimer);
+    roundTimer = setInterval(() => {
         if (!gameActive) return;
         timeLeft--;
         io.emit('timerUpdate', timeLeft);
-
         if (timeLeft <= 0) {
             gameActive = false;
             activeTask = null;
-            io.emit('roundOver', { success: false, reason: 'Time\'s up!' });
-            setTimeout(startNewRound, 2500);
+            io.emit('roundOver', { success: false, reason: "Time's up!" });
+            setTimeout(startNewRound, 2000);
         }
+    }, 1000);
+}
+
+function startGameTimer() {
+    if (gameTimer) clearInterval(gameTimer);
+    gameTimer = setInterval(() => {
+        gameTimeLeft--;
+        io.emit('gameTimerUpdate', gameTimeLeft);
+        if (gameTimeLeft <= 0) endGame();
     }, 1000);
 }
 
@@ -139,24 +148,21 @@ io.on('connection', (socket) => {
     const ids = getPlayerIds();
 
     if (ids.length < 2) {
-        players[socket.id] = {
-            id: socket.id,
-            role: null // assigned in startNewRound
-        };
-
-        socket.emit('waiting', { message: 'Waiting for another player...' });
+        players[socket.id] = { id: socket.id, role: null };
+        socket.emit('waiting');
 
         if (getPlayerIds().length === 2) {
             score = 0;
             roundNumber = 0;
+            gameTimeLeft = 90;
             startNewRound();
-            startTimer();
+            startRoundTimer();
+            startGameTimer();
         }
     } else {
         socket.emit('spectator');
     }
 
-    // Client sends the index of the choice they picked
     socket.on('submitChoice', (choiceIndex) => {
         if (!gameActive || !activeTask) return;
         if (!players[socket.id] || players[socket.id].role !== 'Responder') return;
@@ -166,11 +172,11 @@ io.on('connection', (socket) => {
 
         if (isCorrect) {
             score += 10;
-            io.emit('roundOver', { success: true, reason: 'Correct! +10 points' });
-            setTimeout(startNewRound, 1500);
+            io.emit('roundOver', { success: true, reason: 'Correct! +10' });
+            setTimeout(startNewRound, 1200);
         } else {
-            io.emit('roundOver', { success: false, reason: 'Wrong choice. No points.' });
-            setTimeout(startNewRound, 2500);
+            io.emit('roundOver', { success: false, reason: 'Wrong.' });
+            setTimeout(startNewRound, 2000);
         }
     });
 
@@ -180,18 +186,12 @@ io.on('connection', (socket) => {
         gameActive = false;
         activeTask = null;
         roundNumber = 0;
-
-        if (timer) {
-            clearInterval(timer);
-            timer = null;
-        }
-
-        if (wasPlayer) {
-            // Notify remaining player
-            io.emit('partnerLeft');
-        }
+        gameTimeLeft = 90;
+        if (roundTimer) { clearInterval(roundTimer); roundTimer = null; }
+        if (gameTimer)  { clearInterval(gameTimer);  gameTimer  = null; }
+        if (wasPlayer) io.emit('partnerLeft');
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Stroop game running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Game running on port ${PORT}`));
