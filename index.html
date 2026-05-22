@@ -3,140 +3,153 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Render Live Sync Test</title>
+    <title>Stroop Sync Bypass</title>
     <style>
         body {
             margin: 0;
-            background: #111424;
-            color: #fff;
+            background: #0b0c10;
+            color: #ffffff;
             font-family: system-ui, sans-serif;
-            text-align: center;
-            overflow: hidden;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100vh;
+            overflow: hidden;
         }
-        h2 { margin: 5px 0; color: #00ffcc; }
-        #status { font-weight: bold; margin-bottom: 10px; color: #ff007f; }
-        canvas {
-            background: #1a1d36;
-            border: 2px solid #3d4475;
-            border-radius: 8px;
-            max-width: 90vw;
+        .header { margin-bottom: 25px; }
+        .score-board { font-size: 24px; color: #1f2833; color: #45f3ff; font-weight: bold; }
+        .timer-display { font-size: 20px; color: #ff4a4a; margin: 5px; }
+        
+        #role-badge { padding: 8px 20px; border-radius: 20px; font-weight: bold; font-size: 16px; margin-bottom: 20px; text-transform: uppercase; }
+        
+        /* Layout Modules */
+        .pane { display: none; background: #1f2833; border: 1px solid #c5a059; border-radius: 12px; padding: 40px; width: 320px; box-sizing: border-box; text-align: center; }
+        
+        /* The Stroop Target Word */
+        #stroop-target {
+            font-size: 64px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            margin: 20px 0;
         }
-        .btn-container {
-            margin-top: 15px;
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
+
+        /* Choice Buttons for Terminal Interface */
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 10px;
         }
-        .action-btn {
-            background: linear-gradient(135deg, #00ffcc, #0077ff);
-            border: none;
-            color: white;
-            padding: 20px 40px;
-            font-size: 20px;
+        .choice-btn {
+            background: #0b0c10;
+            border: 2px solid #45f3ff;
+            color: #ffffff;
+            padding: 20px 10px;
+            font-size: 18px;
             font-weight: bold;
-            border-radius: 12px;
+            border-radius: 8px;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,255,204,0.3);
-            -webkit-user-select: none; /* Prevent selection flashing on tap */
+            text-transform: uppercase;
+            -webkit-user-select: none;
             user-select: none;
         }
-        .action-btn:active { transform: scale(0.95); background: #ff007f; }
-        #reset-btn { background: #3d4475; font-size: 14px; padding: 10px 20px; margin-top: 10px;}
+        .choice-btn:active { background: #45f3ff; color: #000; }
+        
+        #feedback-msg { font-size: 20px; color: #ffff00; margin-top: 25px; font-weight: bold; min-height: 50px; }
     </style>
 </head>
 <body>
 
-    <h2>HEIST SYNC TEST</h2>
-    <div id="status">Connecting to network...</div>
-
-    <canvas id="gameCanvas" width="400" height="200"></canvas>
-
-    <div class="btn-container">
-        <!-- Giant touch button for easy phone interaction -->
-        <button class="action-btn" id="tapButton">TAP TO SCORE</button>
+    <div class="header">
+        <div class="score-board">TEAM COMPLIANCE: <span id="score-val">0</span></div>
+        <div class="timer-display">STABILITY WINDOW: <span id="timer-val">7</span>s</div>
     </div>
-    
-    <button class="action-btn" id="reset-btn">Reset Grid</button>
 
-    <!-- Load client socket from Render endpoint directly -->
+    <div id="role-badge">Calibrating matrix...</div>
+
+    <!-- MONITOR PANEL (Transmitter) -->
+    <div id="monitor-pane" class="pane">
+        <div style="color: #66fcf1; font-size: 14px; font-weight: bold;">SAY THE INK COLOR ALOUD:</div>
+        <div id="stroop-target">WORD</div>
+    </div>
+
+    <!-- TERMINAL PANEL (Receiver) -->
+    <div id="terminal-pane" class="pane">
+        <div style="color: #66fcf1; font-size: 14px; font-weight: bold; margin-bottom: 15px;">SELECT SPANNING COLOR MATCH:</div>
+        <div class="options-grid" id="buttons-container"></div>
+    </div>
+
+    <div id="feedback-msg">Waiting for nodes to align...</div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const statusDiv = document.getElementById('status');
-        const tapBtn = document.getElementById('tapButton');
-        const resetBtn = document.getElementById('reset-btn');
+        let myId = null;
+        let currentTargetColor = "";
 
-        let myPlayerNumber = null;
+        // Standard web-safe high-contrast color dictionary
+        const COLOR_MAP = {
+            'RED': '#ff3333',
+            'BLUE': '#3377ff',
+            'GREEN': '#33cc33',
+            'YELLOW': '#ffff33',
+            'ORANGE': '#ff9933',
+            'PURPLE': '#cc33ff'
+        };
 
-        socket.on('playerAssign', (num) => {
-            myPlayerNumber = num;
-            statusDiv.innerText = `Connected smoothly! You are: PLAYER ${num}`;
-            statusDiv.style.color = num === 1 ? '#00ffcc' : '#ff007f';
-        });
+        socket.on('connect', () => { myId = socket.id; });
 
-        socket.on('spectator', (msg) => {
-            statusDiv.innerText = "Room full! You are viewing the match.";
-            statusDiv.style.color = '#ffff00';
-        });
+        socket.on('roundStart', (data) => {
+            document.getElementById('score-val').innerText = data.score;
+            document.getElementById('timer-val').innerText = data.timeLeft;
+            document.getElementById('feedback-msg').innerText = "System Synced";
+            document.getElementById('feedback-msg').style.color = "#ffff00";
 
-        // Live state redraw loop
-        socket.on('stateUpdate', (players) => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const me = data.players[myId];
+            const roleBadge = document.getElementById('role-badge');
+            const monitorPane = document.getElementById('monitor-pane');
+            const terminalPane = document.getElementById('terminal-pane');
+            
+            currentTargetColor = data.challenge.color;
 
-            // Draw Finish Line
-            ctx.strokeStyle = '#3d4475';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(200, 0); ctx.lineTo(200, canvas.height);
-            ctx.stroke();
+            if (me.role === 'Monitor') {
+                roleBadge.innerText = "Role: Core Scanner";
+                roleBadge.style.backgroundColor = "#1f3a60";
+                monitorPane.style.display = "block";
+                terminalPane.style.display = "none";
 
-            // Draw player targets
-            for (let id in players) {
-                const p = players[id];
-                
-                // Styling based on identity
-                ctx.fillStyle = p.playerNumber === 1 ? '#00ffcc' : '#ff007f';
-                
-                // Draw avatar square
-                ctx.fillRect(p.x, 80, 40, 40);
+                // Set up the target word layout with the mismatched ink color
+                const wordElement = document.getElementById('stroop-target');
+                wordElement.innerText = data.challenge.text;
+                wordElement.style.color = COLOR_MAP[data.challenge.color];
+            } else {
+                roleBadge.innerText = "Role: Core Interceptor";
+                roleBadge.style.backgroundColor = "#601f3a";
+                monitorPane.style.display = "none";
+                terminalPane.style.display = "block";
 
-                // Draw Text Data above avatars
-                ctx.font = '14px sans-serif';
-                ctx.fillText(`P${p.playerNumber}: ${p.score} pts`, p.x - 5, 70);
+                // Render options buttons cleanly
+                const container = document.getElementById('buttons-container');
+                container.innerHTML = '';
+                data.challenge.choices.forEach(colorName => {
+                    const btn = document.createElement('button');
+                    btn.className = 'choice-btn';
+                    btn.innerText = colorName;
+                    btn.onclick = () => socket.emit('submitSelection', colorName, currentTargetColor);
+                    container.appendChild(btn);
+                });
             }
         });
 
-        socket.on('gameOver', (winnerMessage) => {
-            statusDiv.innerText = winnerMessage;
-            statusDiv.style.color = '#ffff00';
+        socket.on('timerUpdate', (time) => {
+            document.getElementById('timer-val').innerText = time;
         });
 
-        socket.on('gameReset', () => {
-            if(myPlayerNumber) {
-                statusDiv.innerText = `Game reset! You are: PLAYER ${myPlayerNumber}`;
-                statusDiv.style.color = myPlayerNumber === 1 ? '#00ffcc' : '#ff007f';
-            }
-        });
-
-        // Trigger input triggers
-        const sendScore = () => { if(myPlayerNumber) socket.emit('incrementScore'); };
-        
-        tapBtn.addEventListener('click', sendScore);
-        resetBtn.addEventListener('click', () => socket.emit('resetGame'));
-
-        // Keyboard listener fallback for laptop testing
-        window.addEventListener('keydown', (e) => {
-            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'Enter') {
-                sendScore();
-            }
+        socket.on('roundOver', (result) => {
+            const feedback = document.getElementById('feedback-msg');
+            feedback.innerText = result.reason;
+            feedback.style.color = result.success ? '#66fcf1' : '#ff4a4a';
         });
     </script>
 </body>
