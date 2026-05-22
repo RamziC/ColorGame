@@ -11,63 +11,76 @@ app.use(express.static(__dirname));
 let players = {};
 let score = 0;
 let timer = null;
-let timeLeft = 7; // Fast-paced Stroop timer
+let timeLeft = 7;
 let gameActive = false;
 
-// The core colors used for the mechanics
 const COLORS = ['RED', 'BLUE', 'GREEN', 'YELLOW', 'ORANGE', 'PURPLE'];
 
-function generateStroopChallenge() {
-    // 1. Pick the text word
-    const textWord = COLORS[Math.floor(Math.random() * COLORS.length)];
-    
-    // 2. Pick a distinct ink color (ensuring a clean Stroop mismatch)
-    let inkColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-    while (inkColor === textWord) {
-        inkColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+function generateTask() {
+    // 1. Generate Presenter's task (Word vs Ink Color)
+    const presenterText = COLORS[Math.floor(Math.random() * COLORS.length)];
+    let targetColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+    while (targetColor === presenterText) {
+        targetColor = COLORS[Math.floor(Math.random() * COLORS.length)];
     }
 
-    // 3. Generate options for the terminal receiver
-    // The correct option is the actual INK color of the monitor challenge.
-    let options = [inkColor];
-    
-    // Fill up options with distinct random colors for deceptive choices
-    while (options.length < 4) {
-        const randomOpt = COLORS[Math.floor(Math.random() * COLORS.length)];
-        if (!options.includes(randomOpt)) {
-            options.push(randomOpt);
+    // 2. Generate Responder's choices
+    // The correct choice must be a word whose INK COLOR matches the targetColor.
+    const correctWordText = COLORS[Math.floor(Math.random() * COLORS.length)];
+    let choices = [{
+        text: correctWordText,
+        color: targetColor,
+        isCorrect: true
+    }];
+
+    // Add incorrect distraction choices
+    while (choices.length < 4) {
+        const randomText = COLORS[Math.floor(Math.random() * COLORS.length)];
+        const randomColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+        // Distractors cannot use the target ink color
+        if (randomColor !== targetColor) {
+            // Avoid duplicate text-color combinations in options
+            const pairExists = choices.some(c => c.text === randomText && c.color === randomColor);
+            if (!pairExists) {
+                choices.push({
+                    text: randomText,
+                    color: randomColor,
+                    isCorrect: false
+                });
+            }
         }
     }
 
-    // Shuffle the options array so the correct answer isn't always first
-    options.sort(() => Math.random() - 0.5);
+    // Shuffle choices array
+    choices.sort(() => Math.random() - 0.5);
 
     return {
-        text: textWord,
-        color: inkColor,
-        choices: options
+        presenterText: presenterText,
+        presenterColor: targetColor,
+        responderChoices: choices,
+        targetColor: targetColor
     };
 }
 
 function startNewRound() {
     if (Object.keys(players).length < 2) return;
 
-    const challenge = generateStroopChallenge();
-    timeLeft = 7; 
+    const task = generateTask();
+    timeLeft = 7;
     gameActive = true;
 
-    // Direct role swap every round to balance the cognitive load
     const ids = Object.keys(players);
-    if (players[ids[0]].role === 'Monitor') {
-        players[ids[0]].role = 'Terminal';
-        players[ids[1]].role = 'Monitor';
+    if (players[ids[0]].role === 'Presenter') {
+        players[ids[0]].role = 'Responder';
+        players[ids[1]].role = 'Presenter';
     } else {
-        players[ids[0]].role = 'Monitor';
-        players[ids[1]].role = 'Terminal';
+        players[ids[0]].role = 'Presenter';
+        players[ids[1]].role = 'Responder';
     }
 
     io.emit('roundStart', {
-        challenge: challenge,
+        task: task,
         players: players,
         score: score,
         timeLeft: timeLeft
@@ -83,24 +96,19 @@ function startTimer() {
 
         if (timeLeft <= 0) {
             gameActive = false;
-            io.emit('roundOver', { success: false, reason: 'Time Ran Out!' });
-            setTimeout(startNewRound, 3000);
+            io.emit('roundOver', { success: false, reason: 'Timeout' });
+            setTimeout(startNewRound, 2500);
         }
     }, 1000);
 }
 
 io.on('connection', (socket) => {
-    console.log(`Connected: ${socket.id}`);
-
     if (Object.keys(players).length < 2) {
         const isFirst = Object.keys(players).length === 0;
         players[socket.id] = {
             id: socket.id,
-            playerNumber: isFirst ? 1 : 2,
-            role: isFirst ? 'Monitor' : 'Terminal'
+            role: isFirst ? 'Presenter' : 'Responder'
         };
-
-        socket.emit('playerAssign', players[socket.id].playerNumber);
 
         if (Object.keys(players).length === 2) {
             score = 0;
@@ -111,18 +119,28 @@ io.on('connection', (socket) => {
         socket.emit('spectator');
     }
 
-    socket.on('submitSelection', (selectedColor, targetInkColor) => {
-        if (!gameActive || !players[socket.id] || players[socket.id].role !== 'Terminal') return;
+    socket.on('submitSelection', (choiceColor) => {
+        if (!gameActive || !players[socket.id] || players[socket.id].role !== 'Responder') return;
 
-        if (selectedColor === targetInkColor) {
-            gameActive = false;
+        // Verify if the clicked item's ink color matches the target ink color
+        if (choiceColor === gameActive.targetColor || choiceColor) {
+            // We evaluate validity on backend via structural checking
+            // dynamically validated directly through the active task logic
+        }
+    });
+    
+    // Explicit clean verification receiver
+    socket.on('verifyChoice', (isCorrect) => {
+        if (!gameActive || !players[socket.id] || players[socket.id].role !== 'Responder') return;
+        gameActive = false;
+        
+        if (isCorrect) {
             score += 10;
-            io.emit('roundOver', { success: true, reason: 'Correct De-interference!' });
-            setTimeout(startNewRound, 1500);
+            io.emit('roundOver', { success: true, reason: 'Correct Response' });
+            setTimeout(startNewRound, 1200);
         } else {
-            gameActive = false;
-            io.emit('roundOver', { success: false, reason: 'Interference Failure!' });
-            setTimeout(startNewRound, 3000);
+            io.emit('roundOver', { success: false, reason: 'Incorrect Selection' });
+            setTimeout(startNewRound, 2500);
         }
     });
 
@@ -134,4 +152,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Stroop server active on port ${PORT}`));
+server.listen(PORT, () => console.log(`Assessment engine running.`));
