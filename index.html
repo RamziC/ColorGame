@@ -3,165 +3,267 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cognitive Assessment Interface</title>
+    <title>Stroop Game</title>
     <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            margin: 0;
-            background: #ffffff;
-            color: #1a1a1a;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #fff;
+            color: #111;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.5;
+            min-height: 100vh;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            overflow: hidden;
         }
+
         .container {
             width: 100%;
             max-width: 400px;
-            padding: 20px;
-            box-sizing: border-box;
-            text-align: center;
-        }
-        .meta-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 14px;
-            color: #666666;
-            margin-bottom: 40px;
-            border-bottom: 1px solid #eeeeee;
-            padding-bottom: 10px;
-        }
-        .role-indicator {
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 1px;
-            color: #888888;
-            text-transform: uppercase;
-            margin-bottom: 20px;
-        }
-        
-        /* Main Card Modules */
-        .display-area { display: none; margin: 40px 0; }
-        
-        /* Stimulus Word */
-        #stimulus-text {
-            font-size: 48px;
-            font-weight: 700;
-            letter-spacing: -1px;
+            padding: 32px 24px;
         }
 
-        /* Choice Configurations */
-        .choices-vertical {
+        /* Header */
+        .header {
             display: flex;
-            flex-direction: column;
-            gap: 12px;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 8px;
         }
-        .response-button {
-            background: #f8f9fa;
-            border: 1px solid #e2e8f0;
-            padding: 16px;
-            font-size: 16px;
+        .header-title {
+            font-size: 13px;
             font-weight: 600;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.15s ease;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #111;
         }
-        .response-button:active { background: #edf2f7; }
-        
-        #feedback-log {
+        .header-stats {
+            font-size: 13px;
+            color: #555;
+        }
+        .header-stats b { color: #111; }
+
+        /* Timer bar */
+        .timer-track {
+            height: 2px;
+            background: #e5e5e5;
+            margin-bottom: 36px;
+        }
+        .timer-fill {
+            height: 100%;
+            background: #111;
+            width: 100%;
+            transition: width 1s linear, background 0.3s;
+        }
+        .timer-fill.low { background: #c00; }
+
+        /* Role label */
+        .role-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #999;
+            margin-bottom: 6px;
+        }
+
+        /* Instruction */
+        .instruction {
             font-size: 14px;
-            font-weight: 500;
-            color: #666666;
-            margin-top: 40px;
-            min-height: 20px;
+            color: #444;
+            margin-bottom: 36px;
+            line-height: 1.6;
         }
+        .instruction b { color: #111; font-weight: 600; }
+
+        /* Presenter word */
+        #presenter-view { display: none; text-align: center; margin-bottom: 12px; }
+        #stimulus-text {
+            font-size: 64px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+        .sub-hint {
+            margin-top: 16px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        /* Responder choices */
+        #responder-view { display: none; }
+        .choices-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .choice-btn {
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 18px 8px;
+            font-size: 18px;
+            font-weight: 700;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.1s, border-color 0.1s;
+        }
+        .choice-btn:hover  { background: #f5f5f5; border-color: #bbb; }
+        .choice-btn:active { background: #ececec; }
+        .choice-btn:disabled { opacity: 0.4; cursor: default; }
+
+        /* Feedback */
+        #feedback {
+            margin-top: 28px;
+            font-size: 13px;
+            font-weight: 600;
+            min-height: 20px;
+            color: #555;
+        }
+        #feedback.correct { color: #1a7f3c; }
+        #feedback.wrong   { color: #c00; }
+
+        /* Overlay screens */
+        .screen { display: none; text-align: center; padding: 20px 0; }
+        .screen h2 { font-size: 20px; font-weight: 600; margin-bottom: 10px; color: #111; }
+        .screen p  { font-size: 14px; color: #666; line-height: 1.7; }
+
+        #waiting-screen { display: block; }
     </style>
 </head>
 <body>
+<div class="container">
 
-    <div class="container">
-        <div class="meta-row">
-            <div>Score: <span id="score-val" style="font-weight:600; color:#1a1a1a;">0</span></div>
-            <div>Remaining: <span id="timer-val" style="font-weight:600; color:#1a1a1a;">7</span>s</div>
-        </div>
-
-        <div id="role-indicator" class="role-indicator">Initializing Session...</div>
-
-        <!-- Presenter Mode View -->
-        <div id="presenter-view" class="display-area">
-            <div id="stimulus-text">WORD</div>
-        </div>
-
-        <!-- Responder Mode View -->
-        <div id="responder-view" class="display-area">
-            <div class="choices-vertical" id="choices-container"></div>
-        </div>
-
-        <div id="feedback-log">Awaiting secondary connection...</div>
+    <div id="waiting-screen" class="screen" style="display:block">
+        <h2>Waiting for player 2</h2>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        let myId = null;
+    <div id="spectator-screen" class="screen">
+        <h2>Game in progress</h2>
+        <p>Two players are already connected.<br>Refresh to try again later.</p>
+    </div>
 
-        const HEX_MAP = {
-            'RED': '#dc2626',
-            'BLUE': '#2563eb',
-            'GREEN': '#16a34a',
-            'YELLOW': '#ca8a04',
-            'ORANGE': '#ea580c',
-            'PURPLE': '#9333ea'
-        };
+    <div id="partner-left-screen" class="screen">
+        <h2>Partner disconnected</h2>
+        <p>The other player left.<br>Refresh the page to start over.</p>
+    </div>
 
-        socket.on('connect', () => { myId = socket.id; });
+    <div id="main-game" style="display:none">
+        <div class="header">
+            <div class="header-title">Stroop</div>
+            <div class="header-stats">Score <b id="score-val">0</b> &nbsp;·&nbsp; <b id="timer-val">7</b>s</div>
+        </div>
+        <div class="timer-track"><div class="timer-fill" id="timer-fill"></div></div>
 
-        socket.on('roundStart', (data) => {
-            document.getElementById('score-val').innerText = data.score;
-            document.getElementById('timer-val').innerText = data.timeLeft;
-            document.getElementById('feedback-log').innerText = "";
+        <div id="role-label" class="role-label"></div>
+        <div id="instruction" class="instruction"></div>
 
-            const activeIdentity = data.players[myId];
-            const indicator = document.getElementById('role-indicator');
-            const pView = document.getElementById('presenter-view');
-            const rView = document.getElementById('responder-view');
+        <div id="presenter-view">
+            <div id="stimulus-text">—</div>
+            <div class="sub-hint">Say the ink color out loud — not what the word says</div>
+        </div>
 
-            if (activeIdentity.role === 'Presenter') {
-                indicator.innerText = "Read ink color out loud";
-                pView.style.display = "block";
-                rView.style.display = "none";
+        <div id="responder-view">
+            <div class="choices-grid" id="choices-container"></div>
+        </div>
 
-                const target = document.getElementById('stimulus-text');
-                target.innerText = data.task.presenterText;
-                target.style.color = HEX_MAP[data.task.presenterColor];
-            } else {
-                indicator.innerText = "Select target item matching vocal prompt";
-                pView.style.display = "none";
-                rView.style.display = "block";
+        <div id="feedback"></div>
+    </div>
 
-                const container = document.getElementById('choices-container');
-                container.innerHTML = '';
-                
-                data.task.responderChoices.forEach(item => {
-                    const btn = document.createElement('button');
-                    btn.className = 'response-button';
-                    btn.innerText = item.text;
-                    btn.style.color = HEX_MAP[item.color];
-                    btn.onclick = () => socket.emit('verifyChoice', item.isCorrect);
-                    container.appendChild(btn);
-                });
-            }
-        });
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    let myId = null;
+    let totalTime = 7;
 
-        socket.on('timerUpdate', (time) => {
-            document.getElementById('timer-val').innerText = time;
-        });
+    const COLOR_CSS = {
+        RED:    '#cc2222',
+        BLUE:   '#1a56cc',
+        GREEN:  '#1a8a3a',
+        YELLOW: '#b58a00',
+        ORANGE: '#cc5500',
+        PURPLE: '#6b21a8'
+    };
 
-        socket.on('roundOver', (result) => {
-            document.getElementById('feedback-log').innerText = result.reason;
-        });
-    </script>
+    function showScreen(id) {
+        ['waiting-screen','spectator-screen','partner-left-screen','main-game']
+            .forEach(s => {
+                const el = document.getElementById(s);
+                el.style.display = (s === id) ? '' : 'none';
+                if (el.classList.contains('screen') && s === id) el.style.display = 'block';
+            });
+    }
+
+    socket.on('connect', () => myId = socket.id);
+    socket.on('waiting',     () => showScreen('waiting-screen'));
+    socket.on('spectator',   () => showScreen('spectator-screen'));
+    socket.on('partnerLeft', () => showScreen('partner-left-screen'));
+
+    socket.on('roundStart', (data) => {
+        showScreen('main-game');
+        document.getElementById('score-val').innerText = data.score;
+        document.getElementById('timer-val').innerText = data.timeLeft;
+        document.getElementById('feedback').innerText = '';
+        document.getElementById('feedback').className = '';
+        totalTime = data.timeLeft;
+        setTimerBar(data.timeLeft);
+
+        const role = data.players[myId]?.role;
+        document.getElementById('role-label').innerText = role === 'Presenter' ? 'Your role: Presenter' : 'Your role: Responder';
+
+        const pView = document.getElementById('presenter-view');
+        const rView = document.getElementById('responder-view');
+
+        if (role === 'Presenter') {
+            document.getElementById('instruction').innerHTML =
+                'A word is shown below in a colored ink.<br><b>Say the ink color out loud</b> — ignore the word itself.';
+            pView.style.display = 'block';
+            rView.style.display = 'none';
+            const el = document.getElementById('stimulus-text');
+            el.innerText = data.task.presenterText;
+            el.style.color = COLOR_CSS[data.task.presenterColor];
+        } else {
+            document.getElementById('instruction').innerHTML =
+                'Listen to your partner.<br><b>Tap the button whose ink color matches what they said.</b> Ignore what the words say.';
+            pView.style.display = 'none';
+            rView.style.display = 'block';
+            const container = document.getElementById('choices-container');
+            container.innerHTML = '';
+            data.task.responderChoices.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
+                btn.innerText = item.text;
+                btn.style.color = COLOR_CSS[item.color];
+                btn.onclick = () => {
+                    container.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+                    socket.emit('submitChoice', item.index);
+                };
+                container.appendChild(btn);
+            });
+        }
+    });
+
+    socket.on('timerUpdate', (t) => {
+        document.getElementById('timer-val').innerText = t;
+        setTimerBar(t);
+    });
+
+    socket.on('roundOver', (result) => {
+        const fb = document.getElementById('feedback');
+        fb.innerText = result.reason;
+        fb.className = result.success ? 'correct' : 'wrong';
+        if (result.success)
+            document.getElementById('score-val').innerText =
+                parseInt(document.getElementById('score-val').innerText) + 10;
+    });
+
+    function setTimerBar(t) {
+        const fill = document.getElementById('timer-fill');
+        fill.style.width = (t / totalTime * 100) + '%';
+        fill.classList.toggle('low', t <= 3);
+    }
+</script>
 </body>
 </html>
