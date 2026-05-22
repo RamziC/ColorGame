@@ -44,19 +44,32 @@
         }
         .header-stats b { color: #111; }
 
-        /* Timer bar */
-        .timer-track {
+        /* Game timer bar (90s) */
+        .game-track {
             height: 2px;
             background: #e5e5e5;
-            margin-bottom: 48px;
+            margin-bottom: 6px;
         }
-        .timer-fill {
+        .game-fill {
             height: 100%;
             background: #111;
             width: 100%;
             transition: width 1s linear, background 0.3s;
         }
-        .timer-fill.low { background: #c00; }
+        .game-fill.low { background: #c00; }
+
+        /* Round timer bar (7s) */
+        .round-track {
+            height: 2px;
+            background: #e5e5e5;
+            margin-bottom: 40px;
+        }
+        .round-fill {
+            height: 100%;
+            background: #bbb;
+            width: 100%;
+            transition: width 1s linear;
+        }
 
         /* Role label */
         .role-label {
@@ -65,19 +78,19 @@
             letter-spacing: 0.1em;
             text-transform: uppercase;
             color: #999;
-            margin-bottom: 40px;
+            margin-bottom: 36px;
         }
 
         /* Presenter word */
         #presenter-view { display: none; text-align: center; }
         #stimulus-text {
-            font-size: 72px;
+            font-size: 64px;
             font-weight: 700;
             letter-spacing: -1px;
             line-height: 1;
         }
 
-        /* Responder choices */
+        /* Responder choices — 2x2 grid */
         #responder-view { display: none; }
         .choices-grid {
             display: grid;
@@ -88,19 +101,19 @@
             background: #fff;
             border: 1px solid #ddd;
             padding: 20px 8px;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
             border-radius: 4px;
             cursor: pointer;
             transition: background 0.1s, border-color 0.1s;
         }
-        .choice-btn:hover     { background: #f5f5f5; border-color: #bbb; }
-        .choice-btn:active    { background: #ececec; }
-        .choice-btn:disabled  { opacity: 0.4; cursor: default; }
+        .choice-btn:hover    { background: #f5f5f5; border-color: #bbb; }
+        .choice-btn:active   { background: #ececec; }
+        .choice-btn:disabled { opacity: 0.4; cursor: default; }
 
         /* Feedback */
         #feedback {
-            margin-top: 32px;
+            margin-top: 28px;
             font-size: 13px;
             font-weight: 600;
             min-height: 20px;
@@ -112,6 +125,17 @@
         .screen { display: none; text-align: center; padding: 20px 0; }
         .screen h2 { font-size: 20px; font-weight: 600; color: #111; }
         .screen p  { margin-top: 8px; font-size: 14px; color: #666; line-height: 1.7; }
+        .screen .final-score {
+            font-size: 48px;
+            font-weight: 700;
+            margin: 20px 0 4px;
+        }
+        .screen .final-label {
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #999;
+        }
     </style>
 </head>
 <body>
@@ -131,12 +155,23 @@
         <p>Refresh to start over.</p>
     </div>
 
+    <div id="gameover-screen" class="screen">
+        <h2>Game over</h2>
+        <div class="final-score" id="final-score">0</div>
+        <div class="final-label">points</div>
+        <p style="margin-top:20px">Refresh to play again.</p>
+    </div>
+
     <div id="main-game" style="display:none">
         <div class="header">
             <div class="header-title">Color Game</div>
-            <div class="header-stats">Score <b id="score-val">0</b> &nbsp;·&nbsp; <b id="timer-val">7</b>s</div>
+            <div class="header-stats">Score <b id="score-val">0</b> &nbsp;·&nbsp; <b id="game-timer-val">90</b>s</div>
         </div>
-        <div class="timer-track"><div class="timer-fill" id="timer-fill"></div></div>
+
+        <!-- 90s game bar -->
+        <div class="game-track"><div class="game-fill" id="game-fill"></div></div>
+        <!-- 7s round bar -->
+        <div class="round-track"><div class="round-fill" id="round-fill"></div></div>
 
         <div id="role-label" class="role-label"></div>
 
@@ -156,7 +191,8 @@
 <script>
     const socket = io();
     let myId = null;
-    let totalTime = 7;
+    let totalRoundTime = 7;
+    const TOTAL_GAME_TIME = 90;
 
     const COLOR_CSS = {
         RED:    '#cc2222',
@@ -164,15 +200,29 @@
         GREEN:  '#1a8a3a',
         YELLOW: '#b58a00',
         ORANGE: '#cc5500',
-        PURPLE: '#6b21a8'
+        PURPLE: '#6b21a8',
+        PINK:   '#c0267a',
+        CYAN:   '#0891b2',
+        BROWN:  '#7c4a1e',
+        GRAY:   '#666666'
     };
 
     function showScreen(id) {
-        ['waiting-screen','spectator-screen','partner-left-screen','main-game']
+        ['waiting-screen','spectator-screen','partner-left-screen','gameover-screen','main-game']
             .forEach(s => {
                 const el = document.getElementById(s);
                 el.style.display = (s === id) ? (el.classList.contains('screen') ? 'block' : '') : 'none';
             });
+    }
+
+    function setRoundBar(t) {
+        document.getElementById('round-fill').style.width = (t / totalRoundTime * 100) + '%';
+    }
+
+    function setGameBar(t) {
+        const fill = document.getElementById('game-fill');
+        fill.style.width = (t / TOTAL_GAME_TIME * 100) + '%';
+        fill.classList.toggle('low', t <= 15);
     }
 
     socket.on('connect',     () => myId = socket.id);
@@ -180,14 +230,20 @@
     socket.on('spectator',   () => showScreen('spectator-screen'));
     socket.on('partnerLeft', () => showScreen('partner-left-screen'));
 
+    socket.on('gameOver', (data) => {
+        document.getElementById('final-score').innerText = data.score;
+        showScreen('gameover-screen');
+    });
+
     socket.on('roundStart', (data) => {
         showScreen('main-game');
         document.getElementById('score-val').innerText = data.score;
-        document.getElementById('timer-val').innerText = data.timeLeft;
+        document.getElementById('game-timer-val').innerText = data.gameTimeLeft;
         document.getElementById('feedback').innerText = '';
         document.getElementById('feedback').className = '';
-        totalTime = data.timeLeft;
-        setTimerBar(data.timeLeft);
+        totalRoundTime = data.timeLeft;
+        setRoundBar(data.timeLeft);
+        setGameBar(data.gameTimeLeft);
 
         const role = data.players[myId]?.role;
         document.getElementById('role-label').innerText = role === 'Presenter' ? 'Presenter' : 'Responder';
@@ -221,8 +277,12 @@
     });
 
     socket.on('timerUpdate', (t) => {
-        document.getElementById('timer-val').innerText = t;
-        setTimerBar(t);
+        setRoundBar(t);
+    });
+
+    socket.on('gameTimerUpdate', (t) => {
+        document.getElementById('game-timer-val').innerText = t;
+        setGameBar(t);
     });
 
     socket.on('roundOver', (result) => {
@@ -233,12 +293,6 @@
             document.getElementById('score-val').innerText =
                 parseInt(document.getElementById('score-val').innerText) + 10;
     });
-
-    function setTimerBar(t) {
-        const fill = document.getElementById('timer-fill');
-        fill.style.width = (t / totalTime * 100) + '%';
-        fill.classList.toggle('low', t <= 3);
-    }
 </script>
 </body>
 </html>
