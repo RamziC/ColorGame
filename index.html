@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stroop Game</title>
+    <title>Color Game</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -12,7 +12,6 @@
             color: #111;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
             font-size: 15px;
-            line-height: 1.5;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -49,7 +48,7 @@
         .timer-track {
             height: 2px;
             background: #e5e5e5;
-            margin-bottom: 36px;
+            margin-bottom: 48px;
         }
         .timer-fill {
             height: 100%;
@@ -66,30 +65,16 @@
             letter-spacing: 0.1em;
             text-transform: uppercase;
             color: #999;
-            margin-bottom: 6px;
+            margin-bottom: 40px;
         }
-
-        /* Instruction */
-        .instruction {
-            font-size: 14px;
-            color: #444;
-            margin-bottom: 36px;
-            line-height: 1.6;
-        }
-        .instruction b { color: #111; font-weight: 600; }
 
         /* Presenter word */
-        #presenter-view { display: none; text-align: center; margin-bottom: 12px; }
+        #presenter-view { display: none; text-align: center; }
         #stimulus-text {
-            font-size: 64px;
+            font-size: 72px;
             font-weight: 700;
             letter-spacing: -1px;
             line-height: 1;
-        }
-        .sub-hint {
-            margin-top: 16px;
-            font-size: 12px;
-            color: #aaa;
         }
 
         /* Responder choices */
@@ -102,66 +87,61 @@
         .choice-btn {
             background: #fff;
             border: 1px solid #ddd;
-            padding: 18px 8px;
+            padding: 20px 8px;
             font-size: 18px;
             font-weight: 700;
             border-radius: 4px;
             cursor: pointer;
             transition: background 0.1s, border-color 0.1s;
         }
-        .choice-btn:hover  { background: #f5f5f5; border-color: #bbb; }
-        .choice-btn:active { background: #ececec; }
-        .choice-btn:disabled { opacity: 0.4; cursor: default; }
+        .choice-btn:hover     { background: #f5f5f5; border-color: #bbb; }
+        .choice-btn:active    { background: #ececec; }
+        .choice-btn:disabled  { opacity: 0.4; cursor: default; }
 
         /* Feedback */
         #feedback {
-            margin-top: 28px;
+            margin-top: 32px;
             font-size: 13px;
             font-weight: 600;
             min-height: 20px;
-            color: #555;
         }
         #feedback.correct { color: #1a7f3c; }
         #feedback.wrong   { color: #c00; }
 
         /* Overlay screens */
         .screen { display: none; text-align: center; padding: 20px 0; }
-        .screen h2 { font-size: 20px; font-weight: 600; margin-bottom: 10px; color: #111; }
-        .screen p  { font-size: 14px; color: #666; line-height: 1.7; }
-
-        #waiting-screen { display: block; }
+        .screen h2 { font-size: 20px; font-weight: 600; color: #111; }
+        .screen p  { margin-top: 8px; font-size: 14px; color: #666; line-height: 1.7; }
     </style>
 </head>
 <body>
 <div class="container">
 
     <div id="waiting-screen" class="screen" style="display:block">
-        <h2>Waiting for player 2</h2>
+        <h2>Waiting for player 2…</h2>
     </div>
 
     <div id="spectator-screen" class="screen">
         <h2>Game in progress</h2>
-        <p>Two players are already connected.<br>Refresh to try again later.</p>
+        <p>Refresh to try again later.</p>
     </div>
 
     <div id="partner-left-screen" class="screen">
         <h2>Partner disconnected</h2>
-        <p>The other player left.<br>Refresh the page to start over.</p>
+        <p>Refresh to start over.</p>
     </div>
 
     <div id="main-game" style="display:none">
         <div class="header">
-            <div class="header-title">Stroop</div>
+            <div class="header-title">Color Game</div>
             <div class="header-stats">Score <b id="score-val">0</b> &nbsp;·&nbsp; <b id="timer-val">7</b>s</div>
         </div>
         <div class="timer-track"><div class="timer-fill" id="timer-fill"></div></div>
 
         <div id="role-label" class="role-label"></div>
-        <div id="instruction" class="instruction"></div>
 
         <div id="presenter-view">
             <div id="stimulus-text">—</div>
-            <div class="sub-hint">Say the ink color out loud — not what the word says</div>
         </div>
 
         <div id="responder-view">
@@ -191,12 +171,11 @@
         ['waiting-screen','spectator-screen','partner-left-screen','main-game']
             .forEach(s => {
                 const el = document.getElementById(s);
-                el.style.display = (s === id) ? '' : 'none';
-                if (el.classList.contains('screen') && s === id) el.style.display = 'block';
+                el.style.display = (s === id) ? (el.classList.contains('screen') ? 'block' : '') : 'none';
             });
     }
 
-    socket.on('connect', () => myId = socket.id);
+    socket.on('connect',     () => myId = socket.id);
     socket.on('waiting',     () => showScreen('waiting-screen'));
     socket.on('spectator',   () => showScreen('spectator-screen'));
     socket.on('partnerLeft', () => showScreen('partner-left-screen'));
@@ -211,22 +190,18 @@
         setTimerBar(data.timeLeft);
 
         const role = data.players[myId]?.role;
-        document.getElementById('role-label').innerText = role === 'Presenter' ? 'Your role: Presenter' : 'Your role: Responder';
+        document.getElementById('role-label').innerText = role === 'Presenter' ? 'Presenter' : 'Responder';
 
         const pView = document.getElementById('presenter-view');
         const rView = document.getElementById('responder-view');
 
         if (role === 'Presenter') {
-            document.getElementById('instruction').innerHTML =
-                'A word is shown below in a colored ink.<br><b>Say the ink color out loud</b> — ignore the word itself.';
             pView.style.display = 'block';
             rView.style.display = 'none';
             const el = document.getElementById('stimulus-text');
             el.innerText = data.task.presenterText;
             el.style.color = COLOR_CSS[data.task.presenterColor];
         } else {
-            document.getElementById('instruction').innerHTML =
-                'Listen to your partner.<br><b>Tap the button whose ink color matches what they said.</b> Ignore what the words say.';
             pView.style.display = 'none';
             rView.style.display = 'block';
             const container = document.getElementById('choices-container');
