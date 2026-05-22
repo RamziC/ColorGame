@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Render Live Sync Test</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111424;
+            color: #fff;
+            font-family: system-ui, sans-serif;
+            text-align: center;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        h2 { margin: 5px 0; color: #00ffcc; }
+        #status { font-weight: bold; margin-bottom: 10px; color: #ff007f; }
+        canvas {
+            background: #1a1d36;
+            border: 2px solid #3d4475;
+            border-radius: 8px;
+            max-width: 90vw;
+        }
+        .btn-container {
+            margin-top: 15px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        .action-btn {
+            background: linear-gradient(135deg, #00ffcc, #0077ff);
+            border: none;
+            color: white;
+            padding: 20px 40px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,255,204,0.3);
+            -webkit-user-select: none; /* Prevent selection flashing on tap */
+            user-select: none;
+        }
+        .action-btn:active { transform: scale(0.95); background: #ff007f; }
+        #reset-btn { background: #3d4475; font-size: 14px; padding: 10px 20px; margin-top: 10px;}
+    </style>
+</head>
+<body>
+
+    <h2>HEIST SYNC TEST</h2>
+    <div id="status">Connecting to network...</div>
+
+    <canvas id="gameCanvas" width="400" height="200"></canvas>
+
+    <div class="btn-container">
+        <!-- Giant touch button for easy phone interaction -->
+        <button class="action-btn" id="tapButton">TAP TO SCORE</button>
+    </div>
+    
+    <button class="action-btn" id="reset-btn">Reset Grid</button>
+
+    <!-- Load client socket from Render endpoint directly -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const tapBtn = document.getElementById('tapButton');
+        const resetBtn = document.getElementById('reset-btn');
+
+        let myPlayerNumber = null;
+
+        socket.on('playerAssign', (num) => {
+            myPlayerNumber = num;
+            statusDiv.innerText = `Connected smoothly! You are: PLAYER ${num}`;
+            statusDiv.style.color = num === 1 ? '#00ffcc' : '#ff007f';
+        });
+
+        socket.on('spectator', (msg) => {
+            statusDiv.innerText = "Room full! You are viewing the match.";
+            statusDiv.style.color = '#ffff00';
+        });
+
+        // Live state redraw loop
+        socket.on('stateUpdate', (players) => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Finish Line
+            ctx.strokeStyle = '#3d4475';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(200, 0); ctx.lineTo(200, canvas.height);
+            ctx.stroke();
+
+            // Draw player targets
+            for (let id in players) {
+                const p = players[id];
+                
+                // Styling based on identity
+                ctx.fillStyle = p.playerNumber === 1 ? '#00ffcc' : '#ff007f';
+                
+                // Draw avatar square
+                ctx.fillRect(p.x, 80, 40, 40);
+
+                // Draw Text Data above avatars
+                ctx.font = '14px sans-serif';
+                ctx.fillText(`P${p.playerNumber}: ${p.score} pts`, p.x - 5, 70);
+            }
+        });
+
+        socket.on('gameOver', (winnerMessage) => {
+            statusDiv.innerText = winnerMessage;
+            statusDiv.style.color = '#ffff00';
+        });
+
+        socket.on('gameReset', () => {
+            if(myPlayerNumber) {
+                statusDiv.innerText = `Game reset! You are: PLAYER ${myPlayerNumber}`;
+                statusDiv.style.color = myPlayerNumber === 1 ? '#00ffcc' : '#ff007f';
+            }
+        });
+
+        // Trigger input triggers
+        const sendScore = () => { if(myPlayerNumber) socket.emit('incrementScore'); };
+        
+        tapBtn.addEventListener('click', sendScore);
+        resetBtn.addEventListener('click', () => socket.emit('resetGame'));
+
+        // Keyboard listener fallback for laptop testing
+        window.addEventListener('keydown', (e) => {
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'Enter') {
+                sendScore();
+            }
+        });
+    </script>
+</body>
+</html>
